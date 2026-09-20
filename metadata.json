@@ -1,6 +1,6 @@
 {
   "name": "Namana Physiotherapy Clinic",
-  "description": "Clinical record management, patient case sheets, consultation receipts, monthly analytics, IT returns, and dynamic public API data sync.",
-  "requestFramePermissions": [],
+  "description": "Clinical record management, patient case sheets, consultation receipts, monthly analytics, IT returns, voice AI clinical dictation, and dynamic public API data sync.",
+  "requestFramePermissions": ["microphone"],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

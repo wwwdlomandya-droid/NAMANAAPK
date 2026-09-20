@@ -1,5 +1,5 @@
 import React from 'react';
-import { Users, Calendar, IndianRupee, FileSpreadsheet, UserCheck } from 'lucide-react';
+import { Users, Calendar, IndianRupee, FileSpreadsheet, UserCheck, Mic, Sparkles } from 'lucide-react';
 import { ClinicLogo } from './ClinicLogo';
 import { WaterBackupNavButton } from './WaterBackupNavButton';
 
@@ -13,6 +13,7 @@ interface HeaderProps {
   activePatientsCount?: number;
   deletedPatientsCount?: number;
   onSelectPatientStatus?: (status: 'all' | 'active' | 'deleted') => void;
+  onOpenVoiceCommand?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -23,11 +24,12 @@ export const Header: React.FC<HeaderProps> = ({
   activePatientsCount = 0,
   deletedPatientsCount = 0,
   onSelectPatientStatus,
+  onOpenVoiceCommand,
 }) => {
   return (
     <header className="h-16 bg-white/95 backdrop-blur-md border-b border-sky-100 px-2 sm:px-4 md:px-4 lg:px-6 xl:px-8 flex items-center justify-between flex-shrink-0 sticky top-0 z-30 shadow-xs text-slate-800 w-full">
       {/* Clinic Name & Logo Header Region - Guaranteed Home Return & Adaptive Mobile Size */}
-      <div className="flex items-center min-w-0 z-20 mr-1 sm:mr-3">
+      <div className="flex items-center gap-2 sm:gap-3 min-w-0 z-20 mr-1 sm:mr-3">
         {/* Clinic Name Branding Button */}
         <button
           type="button"
@@ -57,6 +59,27 @@ export const Header: React.FC<HeaderProps> = ({
             </p>
           </div>
         </button>
+
+        {/* Single Unified Voice Command Button - Next to Logo Without Overlapping */}
+        {onOpenVoiceCommand && (
+          <button
+            type="button"
+            id="header-unified-voice-command-btn"
+            onClick={onOpenVoiceCommand}
+            className="flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3.5 py-1.5 sm:py-2 rounded-xl bg-gradient-to-r from-sky-600 via-sky-700 to-indigo-600 hover:from-sky-700 hover:via-sky-800 hover:to-indigo-700 text-white font-extrabold text-[11px] sm:text-xs shadow-xs hover:shadow-md active:scale-95 transition-all cursor-pointer border border-sky-400/40 whitespace-nowrap group shrink-0"
+            title="Unified Voice Command AI • Start adding a patient, edit fields, search, navigate"
+            aria-label="Unified Voice Command"
+          >
+            <span className="relative flex h-2 w-2 shrink-0">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-400"></span>
+            </span>
+            <Mic className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-white group-hover:scale-110 transition-transform shrink-0" />
+            <span className="hidden sm:inline">Voice Command</span>
+            <span className="sm:hidden font-bold">Voice</span>
+            <Sparkles className="w-3 h-3 text-amber-300 hidden lg:inline shrink-0" />
+          </button>
+        )}
       </div>
 
       {/* Desktop & Tablet Navigation Tabs - Responsive Spacing & Labels */}

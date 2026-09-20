@@ -14,9 +14,10 @@ import { NewPatientModal } from './components/NewPatientModal';
 import { BackupEntryPasskeyModal } from './components/BackupEntryPasskeyModal';
 import { LocumTenensManager } from './components/LocumTenensManager';
 import { LoadingScreen } from './components/LoadingScreen';
+import { UnifiedVoiceCommandModal } from './components/UnifiedVoiceCommandModal';
 
-import { Patient, SearchFilter, ReceiptData, ClinicSettings } from './types';
-import { CLINIC_CONFIG } from './constants';
+import { Patient, SearchFilter, ReceiptData, ClinicSettings, FollowUpVisit } from './types';
+import { CLINIC_CONFIG, MODALITIES_LIST } from './constants';
 import {
   loadPatients,
   savePatients,
@@ -27,10 +28,15 @@ import {
   parseDateAndTimestamp,
   getLocumPhysiotherapists,
   getCommonReferralDoctors,
+  defaultTreatmentModalities,
+  generateReceiptNumber,
+  formatTime24Hour,
   localDB,
 } from './utils/storage';
 import { pushToGoogleAppsScript } from './utils/googleSheetsSync';
 import { playAddPatientPing } from './utils/audioNotification';
+import { generatePdfCaseSheet } from './utils/pdfCaseSheet';
+import { RecognizedClinicalFields } from './utils/voiceFieldParser';
 import {
   isHourlyBackupDue,
   executeHourlyBackup,
@@ -61,6 +67,7 @@ export function App() {
   const [receiptData, setReceiptData] = useState<ReceiptData | null>(null);
   const [isCloudModalOpen, setIsCloudModalOpen] = useState(false);
   const [isBackupEntryModalOpen, setIsBackupEntryModalOpen] = useState(false);
+  const [isVoiceCommandModalOpen, setIsVoiceCommandModalOpen] = useState(false);
 
   // Mobile sidebar toggle
   const [mobileShowDirectory, setMobileShowDirectory] = useState(false);
@@ -275,6 +282,187 @@ export function App() {
     setPatients((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
   };
 
+  // Voice AI - Add New Patient
+  const handleVoiceAddPatient = (data: Partial<Patient>) => {
+    const newPt = createNewPatient(nextPatientSerial, patients);
+    if (data.name) newPt.name = data.name;
+    if (data.age) newPt.age = data.age;
+    if (data.sex) newPt.sex = data.sex;
+    if (data.contact) newPt.contact = data.contact;
+    if (data.address) newPt.address = data.address;
+    if (data.height) newPt.height = data.height;
+    if (data.weight) newPt.weight = data.weight;
+    if (data.bloodGroup) newPt.bloodGroup = data.bloodGroup;
+    if (data.diagnosis) newPt.diagnosis = data.diagnosis;
+    if (data.history) newPt.history = data.history;
+    if (data.referredBy) newPt.referredBy = data.referredBy;
+    if (data.seenBy) newPt.seenBy = data.seenBy;
+    if (data.treatmentFee) newPt.treatmentFee = data.treatmentFee;
+    if (data.paymentMethod) newPt.paymentMethod = data.paymentMethod;
+    if (data.visitType) newPt.visitType = data.visitType;
+    if (data.painScaleBefore !== undefined) newPt.painScaleBefore = data.painScaleBefore;
+    if (data.painScaleAfter !== undefined) newPt.painScaleAfter = data.painScaleAfter;
+    if (data.treatment) newPt.treatment = data.treatment;
+
+    handleSaveNewPatient(newPt);
+  };
+
+  // Voice AI - Update Existing Patient Fields & Follow-up Sessions
+  const handleVoiceUpdatePatientFields = (patientId: string, fields: RecognizedClinicalFields) => {
+    let updatedTarget: Patient | null = null;
+    const updatedPatients = patients.map((p) => {
+      if (p.id !== patientId) return p;
+      const updated: Patient = { ...p };
+
+      // Demographics
+      if (fields.name) updated.name = fields.name;
+      if (fields.age !== undefined && fields.age !== null && fields.age !== '') {
+        updated.age = Number(fields.age) || fields.age;
+      }
+      if (fields.sex) updated.sex = fields.sex;
+      if (fields.contact) updated.contact = fields.contact;
+      if (fields.address) updated.address = fields.address;
+      if (fields.height) updated.height = fields.height;
+      if (fields.weight) updated.weight = fields.weight;
+      if (fields.bloodGroup) updated.bloodGroup = fields.bloodGroup;
+      if (fields.date) updated.date = fields.date;
+      if (fields.time) updated.time = fields.time;
+      if (fields.referredBy) updated.referredBy = fields.referredBy;
+      if (fields.seenBy) updated.seenBy = fields.seenBy;
+      if (fields.regNo) updated.regNo = fields.regNo;
+      if (fields.receiptNo) updated.receiptNo = fields.receiptNo;
+
+      // Clinical Assessment
+      if (fields.history) {
+        updated.history = updated.history ? `${updated.history}\n${fields.history}` : fields.history;
+      }
+      if (fields.diagnosis) {
+        if (fields.diagnosis.startsWith('+') && updated.diagnosis) {
+          updated.diagnosis = `${updated.diagnosis} ${fields.diagnosis}`.trim();
+        } else {
+          updated.diagnosis = fields.diagnosis;
+        }
+      }
+      if (fields.painScaleBefore !== undefined && fields.painScaleBefore !== null) {
+        updated.painScaleBefore = Number(fields.painScaleBefore);
+      }
+      if (fields.painScaleAfter !== undefined && fields.painScaleAfter !== null) {
+        updated.painScaleAfter = Number(fields.painScaleAfter);
+      }
+
+      // Billing & Visit Type
+      if (fields.treatmentFee !== undefined && fields.treatmentFee !== null && fields.treatmentFee !== '') {
+        updated.treatmentFee = String(fields.treatmentFee);
+      }
+      if (fields.paymentMethod) updated.paymentMethod = fields.paymentMethod;
+      if (fields.visitType) updated.visitType = fields.visitType;
+
+      // Comorbidities
+      if (fields.comorbid) {
+        updated.comorbid = {
+          ...(updated.comorbid || { diabetes: false, bp: false, thyroid: false, other: false, otherText: '' }),
+          ...fields.comorbid,
+        };
+      }
+
+      // Treatment Modalities
+      if (fields.modalities && fields.modalities.length > 0) {
+        const newTreat = { ...(updated.treatment || defaultTreatmentModalities()) };
+        fields.modalities.forEach((m) => {
+          const match = MODALITIES_LIST.find(
+            (item) => item.label.toLowerCase().includes(m.toLowerCase()) || m.toLowerCase().includes(item.label.toLowerCase())
+          );
+          if (match) {
+            (newTreat as any)[match.key] = true;
+          }
+        });
+        updated.treatment = newTreat;
+      }
+
+      // Follow-up Sessions (Add or Edit)
+      if (fields.followUp) {
+        const existingFollowUps = [...(updated.followUps || [])];
+        const fu = fields.followUp;
+
+        if (fu.action === 'update' && existingFollowUps.length > 0) {
+          // Update specific session (e.g. Session 2) or latest session
+          const targetIndex =
+            fu.sessionNumber !== undefined && fu.sessionNumber > 0 && fu.sessionNumber <= existingFollowUps.length
+              ? fu.sessionNumber - 1
+              : existingFollowUps.length - 1;
+
+          const targetSession = { ...existingFollowUps[targetIndex] };
+          if (fu.date) targetSession.date = fu.date;
+          if (fu.time) targetSession.time = fu.time;
+          if (fu.notes) targetSession.notes = fu.notes;
+          if (fu.painScaleBefore !== undefined) targetSession.painScaleBefore = fu.painScaleBefore;
+          if (fu.painScaleAfter !== undefined) targetSession.painScaleAfter = fu.painScaleAfter;
+          if (fu.fee !== undefined) targetSession.fee = String(fu.fee);
+          if (fu.paymentMethod) targetSession.paymentMethod = fu.paymentMethod;
+          if (fu.visitType) targetSession.visitType = fu.visitType;
+          if (fu.seenBy) targetSession.seenBy = fu.seenBy;
+          if (fu.treatmentsGiven && fu.treatmentsGiven.length > 0) targetSession.treatmentsGiven = fu.treatmentsGiven;
+          targetSession.updatedAt = Date.now();
+          existingFollowUps[targetIndex] = targetSession;
+          updated.followUps = existingFollowUps;
+        } else {
+          // Add a new follow-up session
+          const nextSessionNum = existingFollowUps.length + 1;
+          const receiptNum = generateReceiptNumber(updated, nextSessionNum);
+          const newFollowUp: FollowUpVisit = {
+            id: `fu_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+            date: fu.date || new Date().toISOString().split('T')[0],
+            time: fu.time || formatTime24Hour(),
+            notes:
+              fu.notes ||
+              `Session ${nextSessionNum}: Reassessed joint range of motion and muscular tone. Patient reported progressive relief.`,
+            painScale: fu.painScaleAfter ?? fu.painScaleBefore ?? 5,
+            painScaleBefore: fu.painScaleBefore ?? updated.painScaleBefore ?? 5,
+            painScaleAfter: fu.painScaleAfter ?? updated.painScaleAfter ?? 2,
+            treatment: { ...(updated.treatment || defaultTreatmentModalities()) },
+            treatmentsGiven:
+              fu.treatmentsGiven && fu.treatmentsGiven.length > 0
+                ? fu.treatmentsGiven
+                : fields.modalities && fields.modalities.length > 0
+                ? fields.modalities
+                : ['Therapeutic Exercise'],
+            fee: fu.fee !== undefined ? String(fu.fee) : updated.treatmentFee || '500',
+            receiptNo: receiptNum,
+            visitType: fu.visitType || updated.visitType || 'Clinic',
+            paymentMethod: fu.paymentMethod || updated.paymentMethod || 'UPI',
+            seenBy: fu.seenBy || updated.seenBy || 'Dr. Vinay',
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+          };
+          updated.followUps = [...existingFollowUps, newFollowUp];
+        }
+      }
+
+      updated.updatedAt = Date.now();
+      updatedTarget = updated;
+      return updated;
+    });
+
+    setPatients(updatedPatients);
+    savePatients(updatedPatients);
+    if (updatedTarget) {
+      try {
+        const webhookUrl = localStorage.getItem('namana_script_url') || clinicSettings.scriptUrl || '';
+        if (webhookUrl && webhookUrl.trim().startsWith('http')) {
+          const archiveConfig = {
+            archiveSheet1Id: localStorage.getItem('namana_archive_sheet_1_id') || clinicSettings.archiveSheetId1 || undefined,
+            archiveSheet2Id: localStorage.getItem('namana_archive_sheet_2_id') || clinicSettings.archiveSheetId2 || undefined,
+          };
+          pushToGoogleAppsScript(webhookUrl.trim(), updatedPatients, archiveConfig, 'sync', updatedTarget).catch(() => {});
+        }
+      } catch (e) {
+        console.warn('Voice update sync caught minor error:', e);
+      }
+    }
+    setActivePatientId(patientId);
+    setCurrentView('patients');
+  };
+
   // Soft delete patient (move to trash)
   const handleDeletePatient = (id: string) => {
     setPatients((prev) =>
@@ -402,6 +590,7 @@ export function App() {
             setActivePatientId(matching[0].id);
           }
         }}
+        onOpenVoiceCommand={() => setIsVoiceCommandModalOpen(true)}
       />
 
       {/* Main Workspace Body */}
@@ -695,6 +884,41 @@ export function App() {
             }
           }}
           onClose={() => setIsCloudModalOpen(false)}
+        />
+      )}
+
+      {/* Unified Voice AI Command Center */}
+      {isVoiceCommandModalOpen && (
+        <UnifiedVoiceCommandModal
+          isOpen={isVoiceCommandModalOpen}
+          onClose={() => setIsVoiceCommandModalOpen(false)}
+          patients={patients}
+          activePatient={activePatient}
+          currentView={currentView}
+          onAddPatient={handleVoiceAddPatient}
+          onUpdatePatientFields={handleVoiceUpdatePatientFields}
+          onNavigate={(view) => {
+            setCurrentView(view);
+            setMobileShowDirectory(false);
+          }}
+          onSearchPatients={(query) => {
+            setSearchFilter((prev) => ({ ...prev, query, status: 'all' }));
+            setCurrentView('patients');
+          }}
+          onDownloadPdf={async () => {
+            if (activePatient) {
+              await generatePdfCaseSheet(activePatient);
+            }
+          }}
+          onCreateReceipt={() => {
+            if (activePatient) {
+              handleOpenReceipt(activePatient);
+            }
+          }}
+          onSelectActivePatient={(id) => {
+            setActivePatientId(id);
+            setCurrentView('patients');
+          }}
         />
       )}
     </div>

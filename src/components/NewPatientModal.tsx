@@ -14,9 +14,10 @@ import {
   UserCheck,
   Plus,
   Settings2,
+  Sparkles,
 } from 'lucide-react';
 import { Patient, VisitType, PaymentMethod } from '../types';
-import { BLOOD_GROUPS, COMMON_DIAGNOSES, HEIGHT_PRESETS } from '../constants';
+import { BLOOD_GROUPS, COMMON_DIAGNOSES, HEIGHT_PRESETS, MODALITIES_LIST } from '../constants';
 import { calculateBMI } from '../utils/bmi';
 import {
   defaultTreatmentModalities,
@@ -83,6 +84,38 @@ export const NewPatientModal: React.FC<NewPatientModalProps> = ({
     setReferredBy(doc);
     setNewDocInput('');
     setIsAddingNewDoc(false);
+  };
+
+  /**
+   * Handles Clinical Diagnosis selection in New Patient Modal:
+   * 2nd field copies what is chosen in 1st field. Once '+' is entered,
+   * choosing again in 1st field appends the new diagnosis!
+   */
+  const handleDiagnosisSelect = (chosen: string) => {
+    if (!chosen || chosen === '__custom__') return;
+    const current = (diagnosis || '').trim();
+    if (current.endsWith('+')) {
+      const updated = `${current} ${chosen}`.replace(/\s+/g, ' ').trim();
+      setDiagnosis(updated);
+    } else if (!current) {
+      setDiagnosis(chosen);
+    } else {
+      setDiagnosis(chosen);
+    }
+    if (errors.diagnosis) setErrors((prev) => ({ ...prev, diagnosis: '' }));
+  };
+
+  const handleAddAnotherCondition = () => {
+    const current = (diagnosis || '').trim();
+    if (current && !current.endsWith('+')) {
+      setDiagnosis(`${current} + `);
+    } else if (!current) {
+      setDiagnosis('+ ');
+    }
+    const selectEl = document.getElementById('new-patient-diagnosis-select') as HTMLSelectElement;
+    if (selectEl) {
+      selectEl.focus();
+    }
   };
 
   // Dynamic monthly sequential Patient ID: NPC/YY/MM/NNN (resets to 1 each month)
@@ -225,15 +258,17 @@ export const NewPatientModal: React.FC<NewPatientModalProps> = ({
               </p>
             </div>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="p-2 rounded-xl text-slate-500 hover:text-slate-800 hover:bg-slate-200/60 active:bg-slate-300/60 transition-colors cursor-pointer shrink-0 ml-2"
-            title="Close (ESC)"
-            aria-label="Close"
-          >
-            <X className="w-5 h-5 stroke-[2.5]" />
-          </button>
+          <div className="flex items-center gap-2 shrink-0 ml-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="p-2 rounded-xl text-slate-500 hover:text-slate-800 hover:bg-slate-200/60 active:bg-slate-300/60 transition-colors cursor-pointer shrink-0"
+              title="Close (ESC)"
+              aria-label="Close"
+            >
+              <X className="w-5 h-5 stroke-[2.5]" />
+            </button>
+          </div>
         </div>
 
         {/* Modal Scrollable Form Body */}
@@ -564,52 +599,75 @@ export const NewPatientModal: React.FC<NewPatientModalProps> = ({
             {/* Diagnosis Input */}
             <div className="space-y-2">
               <div className="flex items-center justify-between">
-                <label className="block text-[11px] font-bold text-slate-700">
-                  Primary Clinical Diagnosis / Condition <span className="text-rose-500">*</span>
+                <label htmlFor="new-patient-diagnosis-select" className="block text-[11px] font-bold text-slate-700">
+                  Field 1: Choose Diagnosis Preset
                 </label>
                 <span className="text-[10px] text-sky-700 font-semibold bg-sky-50 px-2 py-0.5 rounded-md border border-sky-200">
-                  Select preset or type your own
+                  Copies to Field 2 • '+' adds next condition
                 </span>
               </div>
 
-              {/* Preset Selector Dropdown */}
+              {/* Field 1: Preset Selector Dropdown */}
               <div className="relative">
                 <select
+                  id="new-patient-diagnosis-select"
                   value={COMMON_DIAGNOSES.includes(diagnosis) ? diagnosis : (diagnosis ? '__custom__' : '')}
                   onChange={(e) => {
                     const val = e.target.value;
                     if (val === '__custom__') {
-                      // Keep current diagnosis or clear if it was an exact preset to allow typing
                       if (COMMON_DIAGNOSES.includes(diagnosis)) {
                         setDiagnosis('');
                       }
+                      const el = document.getElementById('new-patient-diagnosis-input') as HTMLInputElement;
+                      if (el) el.focus();
                     } else if (val) {
-                      setDiagnosis(val);
-                      if (errors.diagnosis) setErrors((prev) => ({ ...prev, diagnosis: '' }));
+                      handleDiagnosisSelect(val);
                     }
                   }}
                   className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 outline-none focus:border-sky-500 shadow-2xs cursor-pointer"
                 >
-                  <option value="">— Select from Common Diagnoses (or type below) —</option>
+                  <option value="">— Select from Common Diagnoses (Field 1) —</option>
                   {COMMON_DIAGNOSES.map((d) => (
                     <option key={d} value={d}>
                       {d}
                     </option>
                   ))}
-                  <option value="__custom__">✎ Other / Type Custom Diagnosis (Type below)...</option>
+                  <option value="__custom__">✎ Other / Type Custom Diagnosis...</option>
                 </select>
               </div>
 
-              {/* Free-form Custom Text Input (No restrictive datalist) */}
+              {/* Field 2 Header with '+' Action */}
+              <div className="flex items-center justify-between pt-1">
+                <label htmlFor="new-patient-diagnosis-input" className="block text-[11px] font-bold text-slate-700">
+                  Field 2: Clinical Diagnosis (Copies Field 1, or appends when '+' entered) <span className="text-rose-500">*</span>
+                </label>
+                <button
+                  type="button"
+                  onClick={handleAddAnotherCondition}
+                  className="text-[10.5px] font-bold px-2 py-0.5 rounded-md bg-sky-50 hover:bg-sky-100 text-sky-700 border border-sky-200 cursor-pointer flex items-center gap-1 transition-colors"
+                  title="Enter '+' to append another diagnosis from Field 1"
+                >
+                  <span>+ Add Another Condition</span>
+                </button>
+              </div>
+
+              {/* Field 2 Custom Text Input */}
               <div>
                 <input
                   type="text"
+                  id="new-patient-diagnosis-input"
                   value={diagnosis}
                   onChange={(e) => {
                     setDiagnosis(e.target.value);
                     if (errors.diagnosis) setErrors((prev) => ({ ...prev, diagnosis: '' }));
                   }}
-                  placeholder="Type any custom diagnosis or condition (e.g. Cervical Radiculopathy, Hamstring Strain...)"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      handleAddAnotherCondition();
+                    }
+                  }}
+                  placeholder="e.g. Cervical Spondylosis, Lumbar Disc Herniation, Frozen Shoulder..."
                   className={`w-full px-3.5 py-2.5 bg-white border rounded-xl text-xs text-slate-900 outline-none font-bold shadow-2xs ${
                     errors.diagnosis
                       ? 'border-rose-400 focus:border-rose-500 bg-rose-50/30'
@@ -621,6 +679,14 @@ export const NewPatientModal: React.FC<NewPatientModalProps> = ({
                 )}
               </div>
 
+              {/* Helper notice when '+' is entered */}
+              {(diagnosis || '').trim().endsWith('+') && (
+                <div className="text-[11px] font-semibold text-amber-800 bg-amber-50 border border-amber-200 px-2.5 py-1.5 rounded-xl flex items-center gap-1.5 animate-pulse">
+                  <Sparkles className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                  <span>'+' entered: Now choose a condition from Field 1 dropdown or chips below to add it!</span>
+                </div>
+              )}
+
               {/* Quick Preset Diagnosis Chips */}
               <div className="flex items-center gap-1.5 flex-wrap pt-1">
                 <span className="text-[10px] text-slate-400 font-bold">Quick Chips:</span>
@@ -628,13 +694,12 @@ export const NewPatientModal: React.FC<NewPatientModalProps> = ({
                   <button
                     type="button"
                     key={d}
-                    onClick={() => {
-                      setDiagnosis(d);
-                      if (errors.diagnosis) setErrors((prev) => ({ ...prev, diagnosis: '' }));
-                    }}
+                    onClick={() => handleDiagnosisSelect(d)}
                     className={`text-[10.5px] font-medium px-2 py-0.5 rounded-lg border transition-colors cursor-pointer ${
                       diagnosis === d
                         ? 'bg-sky-600 text-white border-sky-600 font-bold'
+                        : (diagnosis || '').includes(d)
+                        ? 'bg-sky-100 text-sky-900 border-sky-300 font-bold'
                         : 'bg-white border-slate-200 text-slate-700 hover:bg-sky-50'
                     }`}
                   >
@@ -643,21 +708,11 @@ export const NewPatientModal: React.FC<NewPatientModalProps> = ({
                 ))}
                 <button
                   type="button"
-                  onClick={() => {
-                    if (COMMON_DIAGNOSES.includes(diagnosis)) {
-                      setDiagnosis('');
-                    }
-                    // Focus custom text
-                    const el = document.querySelector('input[placeholder*="Type any custom diagnosis"]') as HTMLInputElement;
-                    if (el) el.focus();
-                  }}
-                  className={`text-[10.5px] font-semibold px-2 py-0.5 rounded-lg border transition-colors cursor-pointer ${
-                    diagnosis && !COMMON_DIAGNOSES.includes(diagnosis)
-                      ? 'bg-indigo-600 text-white border-indigo-600'
-                      : 'bg-indigo-50 border-indigo-200 text-indigo-700 hover:bg-indigo-100'
-                  }`}
+                  onClick={handleAddAnotherCondition}
+                  className="text-[10.5px] font-bold px-2 py-0.5 rounded-lg border border-sky-300 bg-sky-50 text-sky-700 hover:bg-sky-100 cursor-pointer"
+                  title="Append ' + ' to add next condition"
                 >
-                  + Other / Custom
+                  + Add (+)
                 </button>
               </div>
             </div>

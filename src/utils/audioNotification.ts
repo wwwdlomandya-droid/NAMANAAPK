@@ -73,3 +73,67 @@ export function playAddPatientPing(): void {
     console.warn('Unable to play add-patient ping audio:', err);
   }
 }
+
+/**
+ * Soft ascending two-tone beep when voice microphone starts listening.
+ */
+export function playVoiceListeningStart(): void {
+  try {
+    const ctx = getAudioContext();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    const master = ctx.createGain();
+    master.gain.setValueAtTime(0.15, now);
+    master.connect(ctx.destination);
+
+    [
+      { freq: 523.25, time: 0, dur: 0.08 }, // C5
+      { freq: 659.25, time: 0.09, dur: 0.12 }, // E5
+    ].forEach(({ freq, time, dur }) => {
+      const osc = ctx.createOscillator();
+      const g = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(freq, now + time);
+      g.gain.setValueAtTime(0.001, now + time);
+      g.gain.exponentialRampToValueAtTime(0.3, now + time + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.001, now + time + dur);
+      osc.connect(g);
+      g.connect(master);
+      osc.start(now + time);
+      osc.stop(now + time + dur);
+    });
+  } catch (e) {}
+}
+
+/**
+ * Gentle affirmative triple-tone chime when Voice AI successfully recognizes and auto-fills fields.
+ */
+export function playVoiceFillSuccess(): void {
+  try {
+    const ctx = getAudioContext();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    const master = ctx.createGain();
+    master.gain.setValueAtTime(0.2, now);
+    master.connect(ctx.destination);
+
+    [
+      { freq: 659.25, time: 0.0, dur: 0.25 }, // E5
+      { freq: 783.99, time: 0.08, dur: 0.25 }, // G5
+      { freq: 1046.5, time: 0.16, dur: 0.45 }, // C6
+    ].forEach(({ freq, time, dur }) => {
+      const osc = ctx.createOscillator();
+      const g = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(freq, now + time);
+      g.gain.setValueAtTime(0.001, now + time);
+      g.gain.exponentialRampToValueAtTime(0.4, now + time + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.001, now + time + dur);
+      osc.connect(g);
+      g.connect(master);
+      osc.start(now + time);
+      osc.stop(now + time + dur);
+    });
+  } catch (e) {}
+}
+
